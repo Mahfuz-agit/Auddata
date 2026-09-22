@@ -3,10 +3,10 @@ name: Extract Audio Data
 on:
   workflow_dispatch:
     inputs:
-      audio_file:
-        description: "Path to audio file in repo"
+      media_file:
+        description: "Path to video or audio file in repo"
         required: true
-        default: "input/audio.mp3"
+        default: "input/video.mp4"
 
 jobs:
   extract:
@@ -27,7 +27,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run extraction script
-        run: python scripts/extract_audio_data.py "${{ github.event.inputs.audio_file }}" audio_data.json
+        run: python scripts/extract_audio_data.py "${{ github.event.inputs.media_file }}" audio_data.json
 
       - name: Upload result
         uses: actions/upload-artifact@v4
