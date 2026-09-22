@@ -1,8 +1,41 @@
+import os
 import sys
 import json
+import subprocess
+import tempfile
 import whisper
 import librosa
 import numpy as np
+
+def extract_audio_from_video(video_path, out_dir):
+    if not os.path.isfile(video_path):
+        raise FileNotFoundError(f"Video not found: {video_path}")
+
+    audio_path = os.path.join(out_dir, "extracted_audio.wav")
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", video_path,
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "44100",
+        "-ac", "1",
+        audio_path
+    ]
+
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {result.stderr.decode()}")
+
+    if not os.path.isfile(audio_path) or os.path.getsize(audio_path) == 0:
+        raise RuntimeError("Audio extraction produced empty file")
+
+    return audio_path
+
+def is_video_file(path):
+    video_exts = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".flv")
+    return path.lower().endswith(video_exts)
 
 def get_transcript(audio_path, model_size="base"):
     model = whisper.load_model(model_size)
@@ -97,27 +130,40 @@ def get_structure(y, sr):
     times = librosa.frames_to_time(bounds, sr=sr)
     return [round(float(t), 3) for t in times]
 
-def main(audio_path, output_path, whisper_model="base"):
-    y, sr = librosa.load(audio_path, sr=None)
+def main(input_path, output_path, whisper_model="base"):
+    if not os.path.isfile(input_path):
+        raise FileNotFoundError(f"Input file not found: {input_path}")
 
-    data = {
-        "transcript": get_transcript(audio_path, whisper_model),
-        "rhythm": get_rhythm(y, sr),
-        "energy": get_energy(y, sr),
-        "pitch": get_pitch(y, sr),
-        "spectral_bands": get_spectral_bands(y, sr),
-        "silence": get_silence(y, sr),
-        "key": get_key(y, sr),
-        "structure_boundaries": get_structure(y, sr)
-    }
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        if is_video_file(input_path):
+            print("Video detected. Extracting audio with ffmpeg...")
+            audio_path = extract_audio_from_video(input_path, tmp_dir)
+        else:
+            audio_path = input_path
 
-    with open(output_path, "w") as f:
-        json.dump(data, f, indent=2)
+        y, sr = librosa.load(audio_path, sr=None)
 
-    print(f"Saved: {output_path}")
+        if y.size == 0:
+            raise RuntimeError("Loaded audio is empty")
+
+        data = {
+            "transcript": get_transcript(audio_path, whisper_model),
+            "rhythm": get_rhythm(y, sr),
+            "energy": get_energy(y, sr),
+            "pitch": get_pitch(y, sr),
+            "spectral_bands": get_spectral_bands(y, sr),
+            "silence": get_silence(y, sr),
+            "key": get_key(y, sr),
+            "structure_boundaries": get_structure(y, sr)
+        }
+
+        with open(output_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+        print(f"Saved: {output_path}")
 
 if __name__ == "__main__":
-    audio_path = sys.argv[1]
+    input_path = sys.argv[1]
     output_path = sys.argv[2] if len(sys.argv) > 2 else "audio_data.json"
     whisper_model = sys.argv[3] if len(sys.argv) > 3 else "base"
-    main(audio_path, output_path, whisper_model)
+    main(input_path, output_path, whisper_model)
